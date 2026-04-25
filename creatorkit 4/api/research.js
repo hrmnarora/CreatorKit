@@ -1,88 +1,86 @@
-export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+import { NextResponse } from "next/server";
 
-  const { topic, profile, chips } = req.body;
-
-  if (!topic) {
-    return res.status(400).json({ error: 'Topic is required' });
-  }
-
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ error: 'API key not configured' });
-  }
-
-  function buildSystem() {
-    let s = `You are an expert content research assistant for digital creators. Research the given topic using web search and return ONLY a raw JSON array — no markdown, no backticks, no explanation before or after.`;
-
-    if (profile && profile.niche) {
-      s += `\n\nCREATOR PROFILE:`;
-      if (profile.niche) s += `\nNiche: ${profile.niche}`;
-      if (profile.platform) s += `\nPlatform: ${profile.platform}`;
-      if (profile.audience) s += `\nAudience: ${profile.audience}`;
-      if (profile.style) s += `\nContent Style: ${profile.style}`;
-      if (profile.competitors) s += `\nCompetitors/Inspirations: ${profile.competitors}`;
-      if (profile.extra) s += `\nExtra context: ${profile.extra}`;
-      s += `\n\nTailor ALL research to fit this creator's niche, platform, and audience.`;
-    }
-
-    s += `\n\nReturn a JSON array of exactly 3 content ideas. Each object must have:
-- title: a compelling video/post title
-- type: one of "trending", "evergreen", "viral", "niche"
-- why_it_works: 2 sentences why this resonates with this creator's audience
-- content_angles: array of 3 unique angles to approach the topic
-${chips && chips.hooks ? '- hook: one powerful opening hook line for the content\n' : ''}- search_insights: what people are actively searching/asking about this right now
-${chips && chips.seo ? '- keywords: array of 5 SEO keywords\n' : ''}- sources_to_check: array of 3 platforms or communities to research (e.g. Reddit, Quora, YouTube)
-- tags: array of 4 hashtags without the # symbol
-
-Use web search to find what is actually trending NOW. Be specific and tailored, not generic.`;
-
-    return s;
-  }
-
+export async function POST(req) {
   try {
-    const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-beta': 'web-search-2025-03-05'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 2500,
-        system: buildSystem(),
-        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-        messages: [{
-          role: 'user',
-          content: `Research this topic for my content: "${topic}". Use web search to find what's trending right now, what people are asking, and what content gaps exist. Return only the JSON array.`
-        }]
-      })
-    });
-
-    if (!anthropicRes.ok) {
-      const err = await anthropicRes.json();
-      return res.status(anthropicRes.status).json({ error: err.error?.message || 'Anthropic API error' });
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: { message: "GEMINI_API_KEY is missing." } },
+        { status: 500 }
+      );
     }
 
-    const data = await anthropicRes.json();
-    const allText = (data.content || [])
-      .filter(b => b.type === 'text')
-      .map(b => b.text)
-      .join('');
-
-    const match = allText.match(/\[[\s\S]*\]/);
-    if (!match) {
-      return res.status(500).json({ error: 'Could not parse AI response. Please try again.' });
+    let body;
+    try { 
+      body = await req.json(); 
+    } catch { 
+      return NextResponse.json({ error: { message: "Invalid JSON body." } }, { status: 400 }); 
     }
 
-    const ideas = JSON.parse(match[0]);
-    return res.status(200).json({ ideas });
+    // FIX 1: Destructure correctly from the body
+    // Updated default to the Gemini 3 series for 2026 stability
+    const { 
+      model = "gemini-3-flash-preview", 
+      messages, 
+      max_tokens = 2000 
+    } = body;
 
+    // FIX 2: Basic validation
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
+      return NextResponse.json({ error: { message: "messages array is required." } }, { status: 400 });
+    }
+
+    const contents = messages.map((m) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: Array.isArray(m.content)
+        ? m.content.map((part) =>
+            part.type === "image"
+              ? { inlineData: { mimeType: part.source.media_type, data: part.source.data } }
+              : { text: part.text ?? "" }
+          )
+        : [{ text: m.content ?? "" }],
+    }));
+
+    // FIX 3: Ensure the URL uses the 'model' variable defined above
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          contents, 
+          generationConfig: { maxOutputTokens: max_tokens } 
+        }),
+      }
+    );
+
+    const rawText = await geminiRes.text();
+    let data;
+    try { 
+      data = JSON.parse(rawText); 
+    } catch {
+      return NextResponse.json(
+        { error: { message: `Gemini returned non-JSON (${geminiRes.status}): ${rawText.slice(0, 200)}` } },
+        { status: 502 }
+      );
+    }
+
+    if (!geminiRes.ok) {
+      return NextResponse.json(
+        { error: { message: data?.error?.message || `Gemini error ${geminiRes.status}` } },
+        { status: geminiRes.status }
+      );
+    }
+
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (text) return NextResponse.json({ choices: [{ message: { content: text } }] });
+
+    const finishReason = data.candidates?.[0]?.finishReason;
+    return NextResponse.json(
+      { error: { message: `No content from Gemini. Finish reason: ${finishReason ?? "unknown"}` } },
+      { status: 500 }
+    );
   } catch (err) {
-    return res.status(500).json({ error: err.message || 'Internal server error' });
+    return NextResponse.json({ error: { message: `Server error: ${err.message}` } }, { status: 500 });
   }
 }
