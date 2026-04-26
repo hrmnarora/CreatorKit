@@ -1,1 +1,739 @@
 
+"use client";
+import { useState, useRef } from "react";
+
+const API = "/api/chat";
+const MODEL = "gemini-2.5-flash";
+
+const styles = `
+  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0a0a0a; color: #f0ece4; font-family: 'DM Sans', sans-serif; min-height: 100vh; }
+
+  .app {
+    min-height: 100vh; background: #0a0a0a;
+    background-image: radial-gradient(ellipse at 20% 50%, rgba(255,180,0,0.04) 0%, transparent 60%),
+                      radial-gradient(ellipse at 80% 20%, rgba(255,100,50,0.04) 0%, transparent 50%);
+  }
+
+  .header {
+    padding: 32px 40px 24px; display: flex; align-items: center;
+    justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .logo { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 20px; letter-spacing: -0.5px; color: #f0ece4; }
+  .logo span { color: #ffb400; }
+  .badge {
+    font-size: 11px; font-weight: 500; letter-spacing: 2px; text-transform: uppercase;
+    color: rgba(240,236,228,0.4); border: 1px solid rgba(255,255,255,0.1); padding: 4px 12px; border-radius: 100px;
+  }
+
+  .main { max-width: 860px; margin: 0 auto; padding: 56px 40px; }
+  .hero { margin-bottom: 56px; }
+  .hero h1 {
+    font-family: 'Syne', sans-serif; font-weight: 800; font-size: clamp(36px, 5vw, 56px);
+    line-height: 1.05; letter-spacing: -2px; color: #f0ece4; margin-bottom: 12px;
+  }
+  .hero h1 em { font-style: normal; color: #ffb400; }
+  .hero p { font-size: 16px; color: rgba(240,236,228,0.5); font-weight: 300; line-height: 1.6; }
+
+  .tabs {
+    display: flex; gap: 4px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px; padding: 4px; margin-bottom: 40px; width: fit-content;
+  }
+  .tab {
+    padding: 10px 24px; border-radius: 8px; font-family: 'DM Sans', sans-serif; font-size: 14px;
+    font-weight: 500; cursor: pointer; border: none; transition: all 0.2s; background: transparent; color: rgba(240,236,228,0.45);
+  }
+  .tab:hover { color: rgba(240,236,228,0.7); }
+  .tab.active { background: #ffb400; color: #0a0a0a; }
+
+  .card {
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 20px; padding: 36px; margin-bottom: 24px;
+  }
+  .card-title { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 18px; margin-bottom: 6px; color: #f0ece4; }
+  .card-desc { font-size: 13px; color: rgba(240,236,228,0.4); margin-bottom: 28px; line-height: 1.5; }
+
+  .field { margin-bottom: 20px; }
+  .field label {
+    display: block; font-size: 12px; font-weight: 500; letter-spacing: 1.5px;
+    text-transform: uppercase; color: rgba(240,236,228,0.45); margin-bottom: 8px;
+  }
+  .field input, .field textarea, .field select {
+    width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px; padding: 12px 16px; color: #f0ece4; font-family: 'DM Sans', sans-serif;
+    font-size: 14px; outline: none; transition: border-color 0.2s; resize: vertical;
+  }
+  .field select option { background: #1a1a1a; }
+  .field input:focus, .field textarea:focus, .field select:focus { border-color: rgba(255,180,0,0.5); }
+  .field input::placeholder, .field textarea::placeholder { color: rgba(240,236,228,0.25); }
+
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; padding: 13px 28px;
+    border-radius: 10px; font-family: 'DM Sans', sans-serif; font-size: 14px;
+    font-weight: 500; cursor: pointer; border: none; transition: all 0.2s;
+  }
+  .btn-primary { background: #ffb400; color: #0a0a0a; }
+  .btn-primary:hover:not(:disabled) { background: #ffc933; transform: translateY(-1px); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+  .btn-ghost { background: rgba(255,255,255,0.06); color: rgba(240,236,228,0.6); border: 1px solid rgba(255,255,255,0.1); }
+  .btn-ghost:hover { background: rgba(255,255,255,0.1); color: #f0ece4; }
+
+  .upload-zone {
+    border: 2px dashed rgba(255,180,0,0.25); border-radius: 12px; padding: 28px 24px;
+    text-align: center; cursor: pointer; transition: all 0.2s;
+    background: rgba(255,180,0,0.03); margin-bottom: 8px; position: relative; overflow: hidden;
+  }
+  .upload-zone:hover { border-color: rgba(255,180,0,0.5); background: rgba(255,180,0,0.06); }
+  .upload-zone.has-image { padding: 0; border-style: solid; border-color: rgba(255,180,0,0.4); }
+  .upload-icon { font-size: 28px; margin-bottom: 10px; }
+  .upload-hint { font-size: 14px; color: rgba(240,236,228,0.6); margin-bottom: 4px; }
+  .upload-hint strong { color: #ffb400; }
+  .upload-sub { font-size: 12px; color: rgba(240,236,228,0.3); }
+  .preview-img { width: 100%; max-height: 200px; object-fit: cover; display: block; border-radius: 10px; }
+  .preview-overlay {
+    position: absolute; inset: 0; background: rgba(0,0,0,0.6);
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; transition: opacity 0.2s; border-radius: 10px;
+  }
+  .upload-zone.has-image:hover .preview-overlay { opacity: 1; }
+  .preview-overlay span { font-size: 13px; color: #f0ece4; font-weight: 500; }
+  .img-row { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; margin-bottom: 20px; }
+  .img-tag {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(255,180,0,0.1); border: 1px solid rgba(255,180,0,0.2);
+    border-radius: 100px; padding: 4px 12px; font-size: 11px; color: #ffb400;
+    font-weight: 500; letter-spacing: 0.5px;
+  }
+
+  .voice-area {
+    background: rgba(255,180,0,0.04); border: 1px dashed rgba(255,180,0,0.2);
+    border-radius: 10px; padding: 16px; margin-top: 12px;
+  }
+  .voice-label {
+    font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase;
+    color: rgba(255,180,0,0.6); margin-bottom: 8px; font-weight: 500;
+  }
+
+  .loading { display: flex; align-items: center; gap: 12px; padding: 24px 0; color: rgba(240,236,228,0.5); font-size: 14px; }
+  .spinner {
+    width: 18px; height: 18px; border: 2px solid rgba(255,180,0,0.2); border-top-color: #ffb400;
+    border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .results { margin-top: 32px; }
+  .results-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+  .results-title { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: rgba(240,236,228,0.4); }
+
+  .divider { height: 1px; background: rgba(255,255,255,0.07); margin: 28px 0; }
+
+  .thumb-grid { display: flex; flex-direction: column; gap: 16px; }
+  .thumb-card {
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px; padding: 22px 24px; transition: border-color 0.2s; animation: fadeUp 0.4s ease both;
+  }
+  .thumb-card:hover { border-color: rgba(255,180,0,0.2); }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+  .thumb-number { font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 800; letter-spacing: 2px; color: #ffb400; margin-bottom: 10px; text-transform: uppercase; }
+  .thumb-concept { font-size: 15px; font-weight: 500; color: #f0ece4; margin-bottom: 10px; line-height: 1.5; }
+  .thumb-tags { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .tag { font-size: 11px; padding: 4px 10px; border-radius: 100px; font-weight: 500; letter-spacing: 0.5px; }
+  .tag-emotion { background: rgba(255,100,50,0.12); color: rgba(255,120,70,0.9); border: 1px solid rgba(255,100,50,0.2); }
+  .thumb-why { font-size: 13px; color: rgba(240,236,228,0.45); line-height: 1.6; margin-top: 8px; font-style: italic; font-weight: 300; }
+
+  .script-output {
+    background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 14px; padding: 28px; animation: fadeUp 0.4s ease both;
+  }
+  .script-text { font-size: 14px; line-height: 1.9; color: rgba(240,236,228,0.8); white-space: pre-wrap; font-weight: 300; }
+  .script-text strong { color: #ffb400; font-weight: 600; }
+
+  .refine-box { margin-top: 20px; display: flex; gap: 10px; }
+  .refine-box input {
+    flex: 1; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px; padding: 12px 16px; color: #f0ece4; font-family: 'DM Sans', sans-serif; font-size: 14px; outline: none;
+  }
+  .refine-box input:focus { border-color: rgba(255,180,0,0.4); }
+  .refine-box input::placeholder { color: rgba(240,236,228,0.25); }
+
+  .error {
+    background: rgba(255,60,60,0.08); border: 1px solid rgba(255,60,60,0.2);
+    border-radius: 10px; padding: 14px 18px; font-size: 13px; color: rgba(255,120,120,0.9); margin-top: 16px;
+  }
+
+  @media (max-width: 600px) {
+    .header { padding: 20px; }
+    .main { padding: 32px 20px; }
+    .row { grid-template-columns: 1fr; }
+    .card { padding: 24px 20px; }
+  }
+`;
+
+// ── Shared fetch helper ─────────────────────────────────────────
+async function callGemini({ messages, max_tokens = 2000 }) {
+  const res = await fetch(API, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: MODEL, max_tokens, messages }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error?.message || `API error ${res.status}`);
+  const text = data.choices?.[0]?.message?.content || "";
+  if (!text) throw new Error("Empty response from Gemini.");
+  return text;
+}
+
+// ── Thumbnail Tool ──────────────────────────────────────────────
+function ThumbnailTool() {
+  const [title, setTitle] = useState("");
+  const [desc, setDesc] = useState("");
+  const [voice, setVoice] = useState("");
+  const [showVoice, setShowVoice] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState(null);
+  const [error, setError] = useState("");
+  const [creatorImage, setCreatorImage] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const fileRef = useRef();
+
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCreatorImage({ base64: reader.result.split(",")[1], mediaType: file.type });
+      setImagePreview(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeImage = (e) => {
+    e.stopPropagation();
+    setCreatorImage(null);
+    setImagePreview(null);
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
+  const generate = async () => {
+    if (!title.trim()) return;
+    setLoading(true);
+    setError("");
+    setResults(null);
+
+    const voiceSection = voice.trim()
+      ? `\nCreator thumbnail style notes:\n${voice}\nFactor this into the concepts.\n`
+      : "";
+
+    const textPrompt = `You are a YouTube thumbnail strategist who has studied the top 1000 highest CTR thumbnails.
+
+Generate exactly 5 thumbnail concepts. Return ONLY valid JSON, no markdown, no explanation.
+
+Video Title: ${title}
+Description: ${desc || "Not provided"}
+${creatorImage ? `A photo of the creator is attached. Analyse their appearance, energy, and features carefully. For each concept, give specific direction on their expression, pose, and positioning — tailored to how they actually look.` : ""}
+${voiceSection}
+
+Return this exact JSON:
+{
+  "concepts": [
+    {
+      "number": 1,
+      "concept": "Detailed visual description — ${creatorImage ? "specific expression and pose direction for this creator, " : ""}text overlay with suggested wording, background, color, layout",
+      "emotion": "Primary emotion triggered (e.g. Shock, Curiosity, FOMO, Inspiration, Disbelief)",
+      "psychology": "The exact psychological mechanism that makes someone click this"
+    }
+  ]
+}`;
+
+    const userContent = creatorImage
+      ? [
+          { type: "image", source: { type: "base64", media_type: creatorImage.mediaType, data: creatorImage.base64 } },
+          { type: "text", text: textPrompt },
+        ]
+      : textPrompt;
+
+    try {
+      const text = await callGemini({
+        messages: [{ role: "user", content: userContent }],
+        max_tokens: 2000,
+      });
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error("No JSON returned. Response: " + text.slice(0, 300));
+      const parsed = JSON.parse(jsonMatch[0]);
+      setResults(parsed.concepts);
+    } catch (e) {
+      setError(e.message || "Something went wrong. Check your API connection and try again.");
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div>
+      <div className="card">
+        <div className="card-title">Thumbnail Idea Generator</div>
+        <div className="card-desc">
+          Get 5 psychologically optimised thumbnail concepts. Upload the creator's photo to get specific expression and pose direction.
+        </div>
+
+        <div className="field">
+          <label>Video Title</label>
+          <input value={title} onChange={e => setTitle(e.target.value)}
+            placeholder="e.g. I Studied 100 YouTubers For 30 Days — Here's What I Found" />
+        </div>
+
+        <div className="field">
+          <label>Video Description <span style={{color:"rgba(240,236,228,0.3)",fontWeight:300,letterSpacing:0}}>optional</span></label>
+          <textarea rows={3} value={desc} onChange={e => setDesc(e.target.value)}
+            placeholder="Brief summary of what the video covers and who it's for..." />
+        </div>
+
+        <div className="field">
+          <label>
+            Creator Photo
+            <span style={{color:"rgba(240,236,228,0.3)", fontWeight:300, letterSpacing:0, marginLeft:6}}>
+              — optional, for personalised pose & expression direction
+            </span>
+          </label>
+          <input ref={fileRef} type="file" accept="image/*" onChange={handleImageUpload} style={{ display: "none" }} />
+          <div className={`upload-zone ${imagePreview ? "has-image" : ""}`} onClick={() => fileRef.current?.click()}>
+            {imagePreview ? (
+              <>
+                <img src={imagePreview} alt="Creator" className="preview-img" />
+                <div className="preview-overlay"><span>🔄 Change photo</span></div>
+              </>
+            ) : (
+              <>
+                <div className="upload-icon">📸</div>
+                <div className="upload-hint"><strong>Click to upload creator photo</strong></div>
+                <div className="upload-sub">JPG, PNG or WEBP · AI will suggest poses tailored to this person</div>
+              </>
+            )}
+          </div>
+          {imagePreview && (
+            <div className="img-row">
+              <div className="img-tag">✦ Photo added — concepts include pose direction</div>
+              <button className="btn btn-ghost" style={{ fontSize: "12px", padding: "5px 12px" }} onClick={removeImage}>Remove</button>
+            </div>
+          )}
+        </div>
+
+        <div style={{ marginBottom: "20px" }}>
+          <button className="btn btn-ghost" style={{ fontSize: "13px", padding: "8px 16px" }} onClick={() => setShowVoice(!showVoice)}>
+            {showVoice ? "▲ Hide" : "▼ Add"} thumbnail style training (optional)
+          </button>
+          {showVoice && (
+            <div className="voice-area">
+              <div className="voice-label">✦ Describe thumbnail style or paste past video titles</div>
+              <textarea rows={4} value={voice} onChange={e => setVoice(e.target.value)}
+                placeholder="e.g. always uses bold red text, face close-up, high contrast. Or paste 5-10 past video titles..."
+                style={{ width:"100%", background:"transparent", border:"none", color:"rgba(240,236,228,0.7)", fontFamily:"DM Sans, sans-serif", fontSize:"13px", outline:"none", resize:"vertical", padding:"0" }}
+              />
+            </div>
+          )}
+        </div>
+
+        <button className="btn btn-primary" onClick={generate} disabled={loading || !title.trim()}>
+          {loading ? "Generating..." : "✦ Generate 5 Concepts"}
+        </button>
+
+        {error && <div className="error">{error}</div>}
+      </div>
+
+      {loading && (
+        <div className="loading">
+          <div className="spinner" />
+          {creatorImage ? "Analysing creator photo + thumbnail psychology..." : "Analysing thumbnail psychology..."}
+        </div>
+      )}
+
+      {results && (
+        <div className="results">
+          <div className="results-header">
+            <div className="results-title">5 Thumbnail Concepts</div>
+            <button className="btn btn-ghost" style={{ fontSize: "12px", padding: "6px 14px" }}
+              onClick={() => { setResults(null); setTitle(""); setDesc(""); }}>Clear</button>
+          </div>
+          <div className="thumb-grid">
+            {results.map((item, i) => (
+              <div className="thumb-card" key={i} style={{ animationDelay: `${i * 0.08}s` }}>
+                <div className="thumb-number">Concept 0{item.number || i + 1}</div>
+                <div className="thumb-concept">{item.concept}</div>
+                <div className="thumb-tags">
+                  <span className="tag tag-emotion">⚡ {item.emotion}</span>
+                </div>
+                <div className="thumb-why">{item.psychology}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Script Generator ────────────────────────────────────────────
+function ScriptTool() {
+  const [topic, setTopic] = useState("");
+  const [audience, setAudience] = useState("");
+  const [length, setLength] = useState("8");
+  const [tone, setTone] = useState("casual-educational");
+  const [voice, setVoice] = useState("");
+  const [showVoice, setShowVoice] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [script, setScript] = useState("");
+  const [refine, setRefine] = useState("");
+  const [history, setHistory] = useState([]);
+  const [error, setError] = useState("");
+
+  const toneMap = {
+    "casual-educational": "Casual but educational — like a smart friend explaining something",
+    "motivational": "High energy and motivational — creates urgency and excitement",
+    "storytelling": "Story-driven — personal anecdotes, narrative arc, emotional beats",
+    "analytical": "Data-driven and analytical — facts, research, logical structure",
+  };
+
+  const generate = async () => {
+    if (!topic.trim()) return;
+    setLoading(true);
+    setError("");
+    setScript("");
+    setHistory([]);
+
+    const voiceSection = voice.trim()
+      ? `\nCreator voice examples (match this tone exactly):\n${voice}\n`
+      : "";
+
+    const userMsg = `You are an elite YouTube scriptwriter. You write scripts that hook viewers immediately, retain attention throughout, and drive action. Your scripts sound natural and conversational, never corporate or stiff.${voiceSection}
+
+Write a complete YouTube script with these specs:
+
+Topic: ${topic}
+Target audience: ${audience || "General YouTube viewers"}
+Approximate length: ${length} minutes
+Tone: ${toneMap[tone]}
+
+Structure:
+- HOOK (0-30 seconds): Bold claim, surprising stat, or story. Do NOT start with "Hey guys welcome back"
+- SETUP (30s-2min): Why this matters to the viewer personally
+- MAIN CONTENT: 3-4 sections with natural transitions. Pattern interrupts every 2-3 mins
+- CONCLUSION: Key insight
+- CTA: One clear call to action
+
+Format each section with **BOLD HEADER**. Write the full script, not an outline.`;
+
+    const msgs = [{ role: "user", content: userMsg }];
+
+    try {
+      const text = await callGemini({ messages: msgs, max_tokens: 4000 });
+      setScript(text);
+      setHistory(msgs);
+    } catch (e) {
+      setError(e.message || "Something went wrong. Check your connection and try again.");
+    }
+    setLoading(false);
+  };
+
+  const refineScript = async () => {
+    if (!refine.trim() || !script) return;
+    setLoading(true);
+    setError("");
+    try {
+      const msgs = [
+        ...history,
+        { role: "assistant", content: script },
+        { role: "user", content: refine },
+      ];
+      const text = await callGemini({ messages: msgs, max_tokens: 4000 });
+      setScript(text);
+      setRefine("");
+    } catch (e) {
+      setError(e.message || "Something went wrong with the refinement.");
+    }
+    setLoading(false);
+  };
+
+  const formatScript = (text) =>
+    text.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>").replace(/\n/g, "<br/>");
+
+  return (
+    <div>
+      <div className="card">
+        <div className="card-title">Script Generator</div>
+        <div className="card-desc">
+          Full YouTube scripts with hooks, structure, and CTAs. Add voice training for creator-specific tone.
+        </div>
+
+        <div className="field">
+          <label>Video Topic</label>
+          <input value={topic} onChange={e => setTopic(e.target.value)}
+            placeholder="e.g. Why most people fail at building habits (and what actually works)" />
+        </div>
+
+        <div className="row">
+          <div className="field">
+            <label>Target Audience</label>
+            <input value={audience} onChange={e => setAudience(e.target.value)} placeholder="e.g. College students, entrepreneurs" />
+          </div>
+          <div className="field">
+            <label>Video Length</label>
+            <select value={length} onChange={e => setLength(e.target.value)}>
+              <option value="5">5 minutes</option>
+              <option value="8">8 minutes</option>
+              <option value="12">12 minutes</option>
+              <option value="15">15 minutes</option>
+              <option value="20">20+ minutes</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="field">
+          <label>Tone</label>
+          <select value={tone} onChange={e => setTone(e.target.value)}>
+            <option value="casual-educational">Casual Educational</option>
+            <option value="motivational">High Energy / Motivational</option>
+            <option value="storytelling">Story-Driven</option>
+            <option value="analytical">Data-Driven / Analytical</option>
+          </select>
+        </div>
+
+        <div style={{ marginBottom: "20px" }}>
+          <button className="btn btn-ghost" style={{ fontSize: "13px", padding: "8px 16px" }} onClick={() => setShowVoice(!showVoice)}>
+            {showVoice ? "▲ Hide" : "▼ Add"} creator voice training (optional)
+          </button>
+          {showVoice && (
+            <div className="voice-area">
+              <div className="voice-label">✦ Paste transcript excerpts or describe speaking style</div>
+              <textarea rows={5} value={voice} onChange={e => setVoice(e.target.value)}
+                placeholder="Paste 2-3 paragraphs from past scripts or transcripts... AI will match their vocabulary, rhythm, and energy."
+                style={{ width:"100%", background:"transparent", border:"none", color:"rgba(240,236,228,0.7)", fontFamily:"DM Sans, sans-serif", fontSize:"13px", outline:"none", resize:"vertical", padding:"0" }}
+              />
+            </div>
+          )}
+        </div>
+
+        <button className="btn btn-primary" onClick={generate} disabled={loading || !topic.trim()}>
+          {loading ? "Writing..." : "✦ Generate Script"}
+        </button>
+        {error && <div className="error">{error}</div>}
+      </div>
+
+      {loading && <div className="loading"><div className="spinner" />Writing your script...</div>}
+
+      {script && !loading && (
+        <div className="results">
+          <div className="results-header">
+            <div className="results-title">Your Script</div>
+            <button className="btn btn-ghost" style={{ fontSize: "12px", padding: "6px 14px" }}
+              onClick={() => navigator.clipboard.writeText(script)}>Copy</button>
+          </div>
+          <div className="script-output">
+            <div className="script-text" dangerouslySetInnerHTML={{ __html: formatScript(script) }} />
+          </div>
+          <div className="divider" />
+          <div style={{ marginBottom: "8px", fontSize: "13px", color: "rgba(240,236,228,0.4)" }}>
+            Want to refine something? Tell me what to change.
+          </div>
+          <div className="refine-box">
+            <input value={refine} onChange={e => setRefine(e.target.value)}
+              placeholder="e.g. Make the hook more aggressive, shorten section 2, add more storytelling..."
+              onKeyDown={e => e.key === "Enter" && refineScript()} />
+            <button className="btn btn-primary" onClick={refineScript} disabled={!refine.trim() || loading}>Refine</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Research Tool ───────────────────────────────────────────────
+function ResearchTool() {
+  const [topic, setTopic] = useState("");
+  const [audience, setAudience] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+
+  const generate = async () => {
+    if (!topic.trim()) return;
+    setLoading(true);
+    setError("");
+    setResult(null);
+
+    const audienceStr = audience || "General YouTube viewers";
+    const prompt = `You are a YouTube content research analyst. A creator wants to make a video on the following topic.
+
+Topic: ${topic}
+Target Audience: ${audienceStr}
+
+Return ONLY valid JSON with no markdown or explanation:
+{
+  "topic": "Refined topic title",
+  "why_now": "Why this is relevant or trending right now with real context",
+  "audience_pain_points": ["pain point 1", "pain point 2", "pain point 3"],
+  "key_points": [
+    { "heading": "Point heading", "detail": "What to cover and why it matters", "importance": "high" }
+  ],
+  "angles_to_avoid": ["Overused angle 1", "Overused angle 2"],
+  "unique_angle": "Fresh differentiated angle that will make this video stand out",
+  "hook_ideas": ["Hook idea 1", "Hook idea 2", "Hook idea 3"],
+  "sources_to_research": ["Source or search term 1", "Source or search term 2", "Source or search term 3"]
+}`;
+
+    try {
+      const text = await callGemini({
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 3000,
+      });
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error("No JSON returned. Response: " + text.slice(0, 200));
+      const parsed = JSON.parse(jsonMatch[0]);
+      setResult(parsed);
+    } catch (e) {
+      setError(e.message || "Something went wrong. Try again.");
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div>
+      <div className="card">
+        <div className="card-title">Video Research Brief</div>
+        <div className="card-desc">
+          Enter your video topic — AI gives you a structured brief of exactly what to cover.
+        </div>
+        <div className="field">
+          <label>Video Topic</label>
+          <input value={topic} onChange={e => setTopic(e.target.value)}
+            placeholder="e.g. How to build a morning routine that actually sticks" />
+        </div>
+        <div className="field">
+          <label>Target Audience <span style={{color:"rgba(240,236,228,0.3)",fontWeight:300,letterSpacing:0}}>optional</span></label>
+          <input value={audience} onChange={e => setAudience(e.target.value)}
+            placeholder="e.g. Entrepreneurs, college students, fitness beginners" />
+        </div>
+        <button className="btn btn-primary" onClick={generate} disabled={loading || !topic.trim()}>
+          {loading ? "Researching..." : "✦ Research This Topic"}
+        </button>
+        {error && <div className="error">{error}</div>}
+      </div>
+
+      {loading && (
+        <div className="loading">
+          <div className="spinner" />
+          Analysing topic, angles, and audience insights...
+        </div>
+      )}
+
+      {result && !loading && (
+        <div className="results">
+          <div className="results-header">
+            <div className="results-title">Research Brief</div>
+            <button className="btn btn-ghost" style={{ fontSize: "12px", padding: "6px 14px" }}
+              onClick={() => { setResult(null); setTopic(""); setAudience(""); }}>Clear</button>
+          </div>
+
+          <div className="thumb-card" style={{ marginBottom: "16px" }}>
+            <div className="thumb-number">Refined Topic</div>
+            <div style={{ fontSize: "18px", fontWeight: 700, color: "#f0ece4", marginBottom: "14px" }}>{result.topic}</div>
+            <div className="thumb-number">Why Now</div>
+            <div style={{ fontSize: "14px", color: "rgba(240,236,228,0.75)", lineHeight: 1.7 }}>{result.why_now}</div>
+          </div>
+
+          <div className="thumb-card" style={{ marginBottom: "16px" }}>
+            <div className="thumb-number">Audience Pain Points</div>
+            {(result.audience_pain_points || []).map((p, i) => (
+              <div key={i} style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
+                <span style={{ color: "#ffb400", fontWeight: 800, fontSize: "13px", flexShrink: 0 }}>0{i + 1}</span>
+                <div style={{ fontSize: "14px", color: "rgba(240,236,228,0.8)", lineHeight: 1.5 }}>{p}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="thumb-card" style={{ marginBottom: "16px" }}>
+            <div className="thumb-number" style={{ marginBottom: "16px" }}>Key Points to Cover</div>
+            {(result.key_points || []).map((pt, i) => (
+              <div key={i} style={{ marginBottom: "18px", paddingBottom: "18px", borderBottom: i < result.key_points.length - 1 ? "1px solid rgba(255,255,255,0.06)" : "none" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
+                  <span style={{ fontSize: "13px", fontFamily: "Syne, sans-serif", fontWeight: 700, color: "#f0ece4" }}>{pt.heading}</span>
+                  <span style={{
+                    fontSize: "10px", padding: "2px 8px", borderRadius: "100px", fontWeight: 600, letterSpacing: "0.5px",
+                    background: pt.importance === "high" ? "rgba(255,180,0,0.12)" : "rgba(255,255,255,0.06)",
+                    color: pt.importance === "high" ? "#ffb400" : "rgba(240,236,228,0.4)",
+                    border: pt.importance === "high" ? "1px solid rgba(255,180,0,0.25)" : "1px solid rgba(255,255,255,0.08)"
+                  }}>{pt.importance === "high" ? "⬆ High Priority" : "Medium"}</span>
+                </div>
+                <div style={{ fontSize: "13px", color: "rgba(240,236,228,0.55)", lineHeight: 1.7 }}>{pt.detail}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="thumb-card" style={{ marginBottom: "16px", border: "1px solid rgba(255,180,0,0.2)", background: "rgba(255,180,0,0.04)" }}>
+            <div className="thumb-number">Your Unique Angle</div>
+            <div style={{ fontSize: "15px", color: "#f0ece4", lineHeight: 1.6, fontWeight: 500 }}>{result.unique_angle}</div>
+          </div>
+
+          <div className="thumb-card" style={{ marginBottom: "16px" }}>
+            <div className="thumb-number">Hook Ideas</div>
+            {(result.hook_ideas || []).map((h, i) => (
+              <div key={i} style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
+                <span style={{ color: "#ffb400", fontWeight: 800, flexShrink: 0 }}>→</span>
+                <div style={{ fontSize: "14px", color: "rgba(240,236,228,0.8)", lineHeight: 1.5 }}>{h}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+            <div className="thumb-card">
+              <div className="thumb-number">Avoid These Angles</div>
+              {(result.angles_to_avoid || []).map((a, i) => (
+                <div key={i} style={{ fontSize: "13px", color: "rgba(240,236,228,0.5)", marginBottom: "8px", display: "flex", gap: "8px" }}>
+                  <span style={{ color: "rgba(255,80,80,0.7)" }}>✕</span>{a}
+                </div>
+              ))}
+            </div>
+            <div className="thumb-card">
+              <div className="thumb-number">Research Further</div>
+              {(result.sources_to_research || []).map((s, i) => (
+                <div key={i} style={{ fontSize: "13px", color: "rgba(240,236,228,0.5)", marginBottom: "8px", display: "flex", gap: "8px" }}>
+                  <span style={{ color: "#ffb400" }}>↗</span>{s}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── App ─────────────────────────────────────────────────────────
+export default function App() {
+  const [tab, setTab] = useState("thumbnail");
+  return (
+    <>
+      <style>{styles}</style>
+      <div className="app">
+        <header className="header">
+          <div className="logo">creator<span>kit</span></div>
+          <div className="badge">AI Powered</div>
+        </header>
+        <main className="main">
+          <div className="hero">
+            <h1>Tools built for<br /><em>serious creators</em></h1>
+            <p>Thumbnail concepts that get clicked. Scripts that retain viewers. Research briefs that inform. Powered by Gemini AI.</p>
+          </div>
+          <div className="tabs">
+            <button className={"tab" + (tab === "thumbnail" ? " active" : "")} onClick={() => setTab("thumbnail")}>Thumbnail Generator</button>
+            <button className={"tab" + (tab === "script" ? " active" : "")} onClick={() => setTab("script")}>Script Generator</button>
+            <button className={"tab" + (tab === "research" ? " active" : "")} onClick={() => setTab("research")}>Topic Research</button>
+          </div>
+          {tab === "thumbnail" ? <ThumbnailTool /> : tab === "script" ? <ScriptTool /> : <ResearchTool />}
+        </main>
+      </div>
+    </>
+  );
+}
